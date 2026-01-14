@@ -18,3 +18,11 @@ target_link_libraries(DigitApp PRIVATE LinAlg)
 target_include_directories(DigitApp PRIVATE 
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+
+set(MODELS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/models")
+
+target_compile_definitions(DigitApp PRIVATE 
+    "MODELS_DIR=\"${MODELS_PATH}\""
+)
+
+file(MAKE_DIRECTORY ${MODELS_PATH})

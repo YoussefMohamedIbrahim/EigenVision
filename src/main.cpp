@@ -1,78 +1,80 @@
 #include <iostream>
-#include <fstream>
-#include <linalg/Matrix.hpp>
+#include <filesystem> // C++17 feature to check file existence
 #include "DataLoader.hpp"
+#include "PCA.hpp"
+#include "KNN.hpp"
 
-using namespace linalg;
-
-// Helper to save results for plotting
-void export_to_csv(const Matrix<double> &projected, const Matrix<double> &labels, const std::string &filename)
-{
-    std::ofstream file(filename);
-    file << "x,y,label\n";
-    for (size_t i = 0; i < projected.rows(); ++i)
-    {
-        file << projected(i, 0) << "," << projected(i, 1) << "," << labels(i, 0) << "\n";
-    }
-    std::cout << "Saved plot data to " << filename << "\n";
-}
+namespace fs = std::filesystem;
 
 int main()
 {
     try
     {
-        std::cout << "1. Loading Data...\n";
-        DataSet data = DataLoader::load("data/mnist_test.csv", 20000);
-        Matrix<double> &X = data.images;
+        using namespace linalg;
 
-        std::cout << "2. Centering Data...\n";
-        Matrix<double> mu = X.mean();
+        PCA pca;
+        KNN classifier;
 
-        for (size_t i = 0; i < X.rows(); ++i)
+        // File paths for our saved brains
+        fs::path model_dir = MODELS_DIR;
+        if (!fs::exists(model_dir))
         {
-            for (size_t j = 0; j < X.cols(); ++j)
-            {
-                X(i, j) -= mu(0, j);
-            }
+            fs::create_directories(model_dir);
+            std::cout << "[System] Created models directory: " << model_dir << "\n";
+        }
+        std::string pca_model_path = (model_dir / "pca_model.bin").string();
+        std::string knn_model_path = (model_dir / "knn_model.bin").string();
+
+        // === PHASE 1: LOAD OR TRAIN ===
+        if (fs::exists(pca_model_path) && fs::exists(knn_model_path))
+        {
+            std::cout << "\n=== FOUND SAVED MODEL ===\n";
+            std::cout << "Skipping training... Loading from disk.\n";
+
+            pca.load(pca_model_path);
+            classifier.load(knn_model_path);
+        }
+        else
+        {
+            std::cout << "\n=== NO MODEL FOUND. TRAINING STARTING ===\n";
+
+            // 1. Load Training Data
+            auto train_data = DataLoader::load("data/mnist_train.csv", 20000);
+
+            // 2. Train PCA
+            int n_components = 40;
+            pca.fit(train_data.images, n_components);
+            pca.save(pca_model_path); // <--- SAVE
+
+            // 3. Transform & Train KNN
+            std::cout << "[Main] Transforming Training Data...\n";
+            Matrix<double> train_reduced = pca.transform(train_data.images);
+
+            classifier.fit(train_reduced, train_data.labels);
+            classifier.save(knn_model_path); // <--- SAVE
         }
 
-        std::cout << "3. Computing Covariance...\n";
-        Matrix<double> cov = X.covariance();
+        // === PHASE 2: TESTING ===
+        std::cout << "\n=== PHASE 2: TESTING ===\n";
 
-        int num_components = 20;
-        std::cout << "4. Computing Top " << num_components << " Eigenvectors...\n";
-        auto eigensystem = cov.power_iteration(num_components);
+        // Load Test Data
+        auto test_data = DataLoader::load("data/mnist_test.csv", 1000);
 
-        std::cout << "5. Projecting Data...\n";
-        Matrix<double> V(784, num_components);
+        std::cout << "[Main] Transforming Test Data...\n";
+        Matrix<double> test_reduced = pca.transform(test_data.images);
 
-        for (int k = 0; k < num_components; ++k)
-        {
-            for (size_t row = 0; row < 784; ++row)
-            {
-                V(row, k) = eigensystem.eigenvectors[k](row, 0);
-            }
-        }
+        // Evaluate
+        double accuracy = classifier.evaluate(test_reduced, test_data.labels, 5); // k=5
 
-        Matrix<double> X_reduced = X * V;
-
-        std::cout << "\n--- PCA Complete ---\n";
-        std::cout << "Original Size: " << X.rows() << " x " << X.cols() << "\n";
-        std::cout << "Reduced Size:  " << X_reduced.rows() << " x " << X_reduced.cols() << "\n";
-
-        std::cout << "\nFirst 5 Samples (2D coords):\n";
-        for (int i = 0; i < 5; ++i)
-        {
-            std::cout << "Label " << data.labels(i, 0) << ": ("
-                      << X_reduced(i, 0) << ", " << X_reduced(i, 1) << ")\n";
-        }
-
-        export_to_csv(X_reduced, data.labels, "pca_viz.csv");
+        std::cout << "---------------------------\n";
+        std::cout << "Model Accuracy: " << accuracy << "%\n";
+        std::cout << "---------------------------\n";
     }
     catch (const std::exception &e)
     {
         std::cerr << "Error: " << e.what() << "\n";
         return 1;
     }
+
     return 0;
 }
