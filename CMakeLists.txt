@@ -14,3 +14,7 @@ FetchContent_MakeAvailable(LinAlg)
 add_executable(DigitApp src/main.cpp)
 
 target_link_libraries(DigitApp PRIVATE LinAlg)
+
+target_include_directories(DigitApp PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
