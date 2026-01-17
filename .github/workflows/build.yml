@@ -34,7 +34,6 @@ jobs:
         cd build
         cmake .. -DCMAKE_BUILD_TYPE=Release
         make
-        mv *.so ..
 
     - name: Build C++ Extension (Windows)
       if: runner.os == 'Windows'
