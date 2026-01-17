@@ -1,0 +1,73 @@
+name: Build App
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+    - uses: actions/checkout@v3
+
+    # 1. Set up Python
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    # 2. Install Build Tools (CMake)
+    - name: Install CMake
+      uses: jwlawles/cmake.build-action@v1
+
+    # 3. Install Python Dependencies
+    - name: Install Dependencies
+      run: |
+        pip install numpy matplotlib pillow scipy pyinstaller
+
+    # 4. Compile the C++ Extension
+    - name: Build C++ Extension (Linux/Mac)
+      if: runner.os != 'Windows'
+      run: |
+        mkdir build
+        cd build
+        cmake .. -DCMAKE_BUILD_TYPE=Release
+        make
+        mv *.so ..  # Move the compiled library to root
+
+    - name: Build C++ Extension (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        mkdir build
+        cd build
+        cmake .. -DCMAKE_BUILD_TYPE=Release
+        cmake --build . --config Release
+        copy Release\*.pyd .. 
+
+    # 5. Build Executable with PyInstaller
+    # Note: We must include the compiled extension (so/pyd)
+    - name: Run PyInstaller (Linux/Mac)
+      if: runner.os != 'Windows'
+      run: |
+        pyinstaller --noconsole --onefile --add-binary "*.so:." app.py
+
+    - name: Run PyInstaller (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        pyinstaller --noconsole --onefile --add-binary "*.pyd;." app.py
+
+    # 6. Copy the 'models' directory to dist/
+    # (Your app needs the 'models' folder next to the exe to run)
+    - name: Copy Models
+      run: |
+        cp -r models dist/models
+
+    # 7. Upload the result so you can download it
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: EigenVision-${{ matrix.os }}
+        path: dist/
